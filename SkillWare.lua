@@ -40,27 +40,11 @@ local Tabs = {
 	-- Creates a new tab titled Main
 	Main = Window:AddTab("Main", "user"),
 	Weapon = Window:AddTab("Weapon", "axe"),
-	Key = Window:AddKeyTab("Key System"),
 	["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
-
---[[
-Example of how to add a warning box to a tab; the title AND text support rich text formatting.
-
-local WarningTab = Tabs["UI Settings"]:AddTab("Warning Box", "user")
-
-WarningTab:UpdateWarningBox({
-	Visible = true,
-	Title = "Warning",
-	Text = "This is a warning box!",
-})
-
-]]
-
--- Groupbox and Tabbox inherit the same functions
--- except Tabboxes you have to call the functions on a tab (Tabbox:AddTab(Name))
 local LeftGroupBox = Tabs.Main:AddLeftGroupbox("Movement", "person-standing")
+local WeaponBox = Tabs.Weapon:AddLeftGroupbox("Weapon Properties", "person-standing")
 -- We can also get our Main tab via the following code:
 -- local LeftGroupBox = Window.Tabs.Main:AddLeftGroupbox("Groupbox", "boxes")
 
@@ -310,146 +294,40 @@ LeftGroupBox:AddSlider("FlySpeedSlider", {
 	end,
 })
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
 
-local LocalPlayer = Players.LocalPlayer
-
--- UI setup (replace with your actual Main tab/group variable)
-local MainTab = Tabs.Main -- change this if your Main tab var is named differently
-local MainGroup = MainTab:AddLeftGroupbox("Player Health & Godmode")
-
--- Variables
-local godmodeEnabled = false
-local customMaxHealth = 1000
-
--- Current character and humanoid refs
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-
--- Protect Humanoid from damage & death (advanced)
-local function protectHumanoid(humanoid)
-    if not humanoid then return end
-    
-    -- Override TakeDamage method
-    if humanoid.TakeDamage then
-        local oldTakeDamage = humanoid.TakeDamage
-        humanoid.TakeDamage = function(self, damage)
-            if godmodeEnabled then
-                return
-            else
-                return oldTakeDamage(self, damage)
-            end
-        end
-    end
-
-    -- Hook Health setter to prevent health reduction
-    local mt = getrawmetatable(game)
-    if setreadonly then setreadonly(mt, false) else make_writeable(mt, true) end
-    local oldNewIndex = mt.__newindex
-    mt.__newindex = newcclosure(function(t, k, v)
-        if t == humanoid and (k == "Health" or k == "health") and godmodeEnabled then
-            if v < humanoid.Health then
-                return -- block health lowering
-            end
-        end
-        return oldNewIndex(t, k, v)
-    end)
-    if setreadonly then setreadonly(mt, true) else make_writeable(mt, false) end
-
-    -- Prevent death state
-    humanoid.StateChanged:Connect(function(_, newState)
-        if godmodeEnabled and newState == Enum.HumanoidStateType.Dead then
-            humanoid.Health = humanoid.MaxHealth
-            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end
-    end)
-
-    -- Set initial health values
-    humanoid.MaxHealth = customMaxHealth
-    humanoid.Health = customMaxHealth
+local function setCharacterTransparency(transparency)
+	for _, part in pairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Transparency = transparency
+			-- Also disable/enable decals so eyes etc disappear
+			for _, decal in pairs(part:GetChildren()) do
+				if decal:IsA("Decal") then
+					decal.Transparency = transparency
+				end
+			end
+		elseif part:IsA("ParticleEmitter") or part:IsA("BillboardGui") then
+			-- Optionally disable visual effects if you want
+			part.Enabled = (transparency == 0)
+		end
+	end
 end
 
--- Prevent character removal (hook Destroy and Parent changes)
-local function protectCharacter(char)
-    if not char then return end
-    
-    -- Hook Destroy method
-    local oldDestroy = char.Destroy
-    char.Destroy = function(self, ...)
-        if godmodeEnabled then
-            return -- block destruction
-        else
-            return oldDestroy(self, ...)
-        end
-    end
-    
-    -- Hook Parent changes (metamethod)
-    local oldNewIndex
-    oldNewIndex = hookmetamethod(game, "__newindex", function(self, key, value)
-        if self == char and key == "Parent" and godmodeEnabled then
-            if value == nil then
-                return -- block removal from workspace
-            end
-        end
-        return oldNewIndex(self, key, value)
-    end)
-end
-
--- Update function to run every frame
-RunService.Heartbeat:Connect(function()
-    if godmodeEnabled and Humanoid and Humanoid.Parent then
-        if Humanoid.Health < Humanoid.MaxHealth then
-            Humanoid.Health = Humanoid.MaxHealth
-        end
-        if Humanoid:GetState() == Enum.HumanoidStateType.Dead then
-            Humanoid.Health = Humanoid.MaxHealth
-            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end
-    end
-end)
-
--- On character spawn, refresh references & protections
-LocalPlayer.CharacterAdded:Connect(function(char)
-    Character = char
-    Humanoid = char:WaitForChild("Humanoid")
-    protectHumanoid(Humanoid)
-    protectCharacter(Character)
-end)
-
--- UI: Toggle Godmode
-MainGroup:AddToggle("GodmodeToggle", {
-    Text = "Godmode",
-    Default = false,
-    Tooltip = "Enable or disable godmode (invincible health)",
-    Callback = function(value)
-        godmodeEnabled = value
-        if godmodeEnabled then
-            protectHumanoid(Humanoid)
-            protectCharacter(Character)
-            Humanoid.MaxHealth = customMaxHealth
-            Humanoid.Health = customMaxHealth
-        end
-    end,
-})
-
--- UI: Slider for custom max health
-MainGroup:AddSlider("MaxHealthSlider", {
-    Text = "Max Health",
-    Min = 100,
-    Max = 5000,
-    Default = customMaxHealth,
-    Rounding = 0,
-    Tooltip = "Set custom max health while godmode is active",
-    Callback = function(value)
-        customMaxHealth = value
-        if Humanoid then
-            Humanoid.MaxHealth = customMaxHealth
-            if godmodeEnabled then
-                Humanoid.Health = customMaxHealth
-            end
-        end
-    end,
+LeftGroupBox:AddToggle("InvisibleMovementToggle", {
+	Text = "Invisible",
+	Tooltip = "Toggle invisible character",
+	Default = false,
+	Callback = function(enabled)
+		character = player.Character or player.CharacterAdded:Wait()
+		if enabled then
+			setCharacterTransparency(1) -- fully invisible
+			print("[cb] Invisible Movement enabled")
+		else
+			setCharacterTransparency(0) -- fully visible
+			print("[cb] Invisible Movement disabled")
+		end
+	end,
 })
 
 -- Fetching a toggle object for later use:
@@ -1103,100 +981,128 @@ local ESPDistanceColorPicker = ESPDistanceToggle:AddColorPicker("ESPDistanceColo
 
 local TabBox = Tabs.Main:AddRightTabbox() -- Add Tabbox on right side
 
--- Anything we can do in a Groupbox, we can do in a Tabbox tab (AddToggle, AddSlider, AddLabel, etc etc...)
-local Tab1 = TabBox:AddTab("Tab 1")
-Tab1:AddToggle("Tab1Toggle", { Text = "Tab1 Toggle" })
+-- ===================================
+-- Libraries & Services
+-- ===================================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
-local Tab2 = TabBox:AddTab("Tab 2")
-Tab2:AddToggle("Tab2Toggle", { Text = "Tab2 Toggle" })
+-- ===================================
+-- Global weapon vars
+-- ===================================
+BulletsPerShot = 1
+MultiShotEnabled = false
+RapidFireEnabled = false
+RapidFireDelay = 1
 
-Library:OnUnload(function()
-	print("Unloaded!")
-end)
-
-local workspace = game:GetService("Workspace")
-local Remote = workspace:WaitForChild("Remote")
-local ItemHandler = Remote:WaitForChild("ItemHandler")
-
-local weaponsFolder = workspace.Prison_ITEMS.giver
-
-local weapons = {
-    "M9",
-    "Remington",
-    "AK-47",
-    "Desert Eagle",
-    "RPG",
-    "Flamethrower",
-    "Fists",
-    "Brass Knuckles",
-    "Knife",
-    "Taser",
-    "Stun Gun",
-    "Gun",
-}
-
-local selectedWeapon = weapons[1]
-
-local WeaponGroupBox = Tabs.Weapon:AddLeftGroupbox("Weapon Selector")
-
-WeaponGroupBox:AddDropdown("WeaponDropdown", {
-    Text = "Select Weapon",
-    Values = weapons,
-    Default = 1,
-    Tooltip = "Choose your weapon",
-    Callback = function(value)
-        selectedWeapon = value
-        print("[Weapon] Selected:", selectedWeapon)
+-- ===================================
+-- UI Setup (using your Tabs & Groupboxes)
+-- ===================================
+WeaponBox:AddButton({
+    Text = "Infinite Ammo",
+    Func = function()
+        task.spawn(function()
+            while true do
+                for _,v in pairs(getgc(true)) do
+                    if type(v) == "table" and rawget(v, "MaxAmmo") then
+                        v.MaxAmmo = math.huge
+                        v.CurrentAmmo = math.huge
+                    end
+                end
+                task.wait(1)
+            end
+        end)
     end,
+    DoubleClick = true,
+    Tooltip = "Gives you infinite ammo"
 })
 
-WeaponGroupBox:AddButton({
-    Text = "Give Weapon",
-    Tooltip = "Gives the selected weapon",
+WeaponBox:AddButton({
+    Text = "Reset Ammo",
     Func = function()
-        local weaponPickup = weaponsFolder:FindFirstChild(selectedWeapon)
-        if weaponPickup and weaponPickup:FindFirstChild("ITEMPICKUP") then
-            local itemPickup = weaponPickup.ITEMPICKUP
-            local success, err = pcall(function()
-                ItemHandler:InvokeServer(itemPickup)
-            end)
-            if success then
-                print("[Weapon] Given:", selectedWeapon)
-            else
-                warn("[Weapon] Failed to give weapon:", err)
+        for _,v in pairs(getgc(true)) do
+            if type(v) == "table" and rawget(v, "MaxAmmo") then
+                v.MaxAmmo = 15
+                v.CurrentAmmo = 15
             end
-        else
-            warn("[Weapon] Weapon not found in workspace:", selectedWeapon)
         end
     end,
+    DoubleClick = true,
+    Tooltip = "Resets ammo to normal"
 })
 
-
--- Anything we can do in a Groupbox, we can do in a Key tab (AddToggle, AddSlider, AddLabel, etc etc...)
-Tabs.Key:AddLabel({
-	Text = "Key: Banana",
-	DoesWrap = true,
-	Size = 16,
+WeaponBox:AddSlider("BulletsPerShot", {
+    Text = "Bullets Per Shot",
+    Default = 1,
+    Min = 1,
+    Max = 50,
+    Rounding = 0,
+    Tooltip = "Number of bullets fired each shot",
+    Callback = function(Value)
+        BulletsPerShot = Value
+    end
 })
 
-Tabs.Key:AddKeyBox("Banana", function(Success, ReceivedKey)
-	print("Expected Key: Banana - Received Key:", ReceivedKey, "| Success:", Success)
-	Library:Notify({
-		Title = "Expected Key: Banana",
-		Description = "Received Key: " .. ReceivedKey .. "\nSuccess: " .. tostring(Success),
-		Time = 4,
-	})
+WeaponBox:AddToggle("MultiShotToggle", {
+    Text = "Enable Multi Shot",
+    Default = false,
+    Tooltip = "Shoot multiple bullets per shot",
+    Callback = function(Value)
+        MultiShotEnabled = Value
+    end
+})
+
+WeaponBox:AddToggle("RapidFireToggle", {
+    Text = "Enable Rapid Fire",
+    Default = false,
+    Tooltip = "Remove firing delay for rapid shots",
+    Callback = function(Value)
+        RapidFireEnabled = Value
+    end
+})
+
+WeaponBox:AddSlider("RapidFireSpeed", {
+    Text = "Rapid Fire Speed",
+    Default = 1,
+    Min = 0,
+    Max = 5,
+    Rounding = 1,
+    Tooltip = "Lower is faster (delay in seconds)",
+    Callback = function(Value)
+        RapidFireDelay = Value
+    end
+})
+
+-- ===================================
+-- Backend weapon modifications
+-- ===================================
+
+-- Rapid Fire Hook
+task.spawn(function()
+    while task.wait() do
+        if RapidFireEnabled then
+            local delay = RapidFireDelay or 0.1
+            for _,v in pairs(getgc(true)) do
+                if type(v) == "table" and rawget(v, "FireRate") then
+                    v.FireRate = delay
+                end
+            end
+        end
+    end
 end)
 
-Tabs.Key:AddLabel({
-	Text = "No Key",
-	DoesWrap = true,
-	Size = 16,
-})
-
-Tabs.Key:AddKeyBox(function(Success, ReceivedKey)
-	print("Expected Key: None | Success:", Success) -- true
-	Library:Notify("Success: " .. tostring(Success), 4)
+-- Multi Shot Hook
+task.spawn(function()
+    while task.wait() do
+        if MultiShotEnabled then
+            for _,v in pairs(getgc(true)) do
+                if type(v) == "table" and rawget(v, "Bullets") then
+                    v.Bullets = BulletsPerShot
+                end
+            end
+        end
+    end
 end)
 
 -- UI Settings
